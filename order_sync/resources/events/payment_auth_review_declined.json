@@ -1,0 +1,6 @@
+{
+    "eventType": "PAYMENT",
+    "orderId": "order123",
+    "paymentStatus" : "AUTHORIZATION_REVIEW_DECLINED",  
+    "timestamp": "2025-04-05T02:26:30.265Z"
+}
