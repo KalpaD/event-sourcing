@@ -1,0 +1,19 @@
+{
+  "devDependencies": {
+    "@types/axios": "^0.14.4",
+    "@types/kafkajs": "^1.9.0",
+    "@types/mysql": "^2.15.27",
+    "@types/node": "^22.14.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "mysql": "^2.18.1",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2"
+  },
+  "scripts": {
+    "build": "tsc --build --verbose",
+    "dev": "nodemon --watch src --exec ts-node src/app.ts",
+    "start": "node dist/app.js"
+  }
+}

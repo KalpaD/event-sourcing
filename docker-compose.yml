@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  zookeeper:  # Zookeeper service, required by Kafka
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:  # Kafka service
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"  # Exposed to the host machine for external connectivity
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+  mysql:  # MySQL service
+    image: mariadb:10.5.8
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: event_synchronization
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  #app:
+  #  build:
+  #    context: ./order_sync
+  #    dockerfile: Dockerfile
+  #  volumes:
+  #    - .:/usr/src/app
+  #    - /usr/src/app/node_modules
+  #  ports:
+  #    - "3000:3000"
+  #  depends_on:
+  #    - kafka
+  #    - mysql
+  #  networks:
+  #    - app-net
+  #  environment:
+  #    DB_HOST: mysql
+  #    DB_USER: user
+  #    DB_PASSWORD: password
+  #    DB_NAME: event_synchronization
+  #    KAFKA_BROKER: kafka:9092
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
