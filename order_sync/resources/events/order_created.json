@@ -1,6 +1,7 @@
 {
     "eventType": "ORDER",
     "orderId": "order123",
+    "revision": 1,
     "orderStatus" : "CREATED",
     "timestamp": "2025-04-05T02:26:30.265Z"
 }

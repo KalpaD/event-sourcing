@@ -1,13 +1,19 @@
 import { Kafka, EachMessagePayload } from 'kafkajs';
 import mysql, { Connection } from 'mysql';
-import axios from 'axios';
 
-interface Order {
-  order_id: string;
-  order_status: string;
-  payment_status: string;
-  review_status: string;
-  ready_to_send: boolean;
+interface EventData {
+    orderId: string;
+    eventType: string;
+    revision : number;
+    data: OrderData; // Assuming 'data' will hold order-related information
+}
+
+interface OrderData {
+    orderId: string;
+    orderStatus: string;
+    paymentStatus: string;
+    reviewStatus: string;
+    readyToSend: boolean;
 }
 
 // MySQL connection
@@ -29,73 +35,90 @@ const kafka = new Kafka({
     brokers: ['localhost:9092']
 });
 
-const kconsumer = kafka.consumer({ groupId: 'event-group' });
+const consumer = kafka.consumer({ groupId: 'event-group' });
 
-// Function to send order to downstream application
-async function sendOrder(orderId: string): Promise<void> {
-    const selectQuery = `SELECT * FROM orders WHERE order_id='${orderId}' AND (order_status='CREATED' AND (payment_status='PAYMENT_AUTHORIZED' OR payment_status='AUTHORIZATION_REVIEW_ACCEPTED')) AND ready_to_send=FALSE;`;
-    db.query(selectQuery, async (err, results: Order[]) => {
-        if (err) throw err;
-        if (results.length > 0) {
-            try {
-                const order = results[0];
-                const response = await axios.post('http://localhost:3001/api/orders', order);
-                if (response.status === 200) {
-                    console.log(`Order ${orderId} sent successfully.`);
-                    const updateQuery = `UPDATE orders SET ready_to_send=TRUE WHERE order_id='${orderId}';`;
-                    db.query(updateQuery, (error) => {
-                        if (error) throw error;
-                        console.log(`Order ${orderId} marked as sent.`);
-                    });
-                }
-            } catch (error) {
-                console.error(`Failed to send order ${orderId}:`, error);
+// Log event to the event_journal
+const logEvent = async (eventData: EventData) => {
+    const { orderId, eventType, data, revision } = eventData;
+    const query = `INSERT INTO event_journal (entity_id, revision, agent, event_type, time_occurred, time_observed, data)
+                   VALUES (?, ?, 'order_sync_app', ?, NOW(), NOW(), ?)`;
+    db.query(query, [orderId, revision, eventType, JSON.stringify(data)], (err) => {
+        if (err) console.error('Error logging event:', err);
+        else console.log(`Event logged successfully for ${orderId} with revision ${revision}`);
+    });
+};
+
+// Update approved_orders if conditions are met
+async function updateApprovedOrders(eventData: EventData) {
+    console.log(`Event in updateApprovedOrders: ${JSON.stringify(eventData)}`);
+    console.log(`eventData.eventType: ${eventData.eventType}`);
+    console.log(`eventData.data.paymentStatus: ${eventData.data.paymentStatus}`);
+
+    // Check if there is an 'ORDER_CREATED' event for this order
+    const checkOrderCreated = `SELECT COUNT(*) AS count FROM event_journal 
+                               WHERE entity_id = ? AND event_type = 'order_events' 
+                               AND JSON_UNQUOTE(JSON_EXTRACT(data, '$.orderStatus')) = 'CREATED'`;
+
+    db.query(checkOrderCreated, [eventData.orderId], (err, results) => {
+        if (err) {
+            console.error('Error checking for ORDER_CREATED event:', err);
+            return;
+        }
+
+        if (results[0].count > 0) {
+            // There is an ORDER_CREATED event, proceed with updating approved_orders
+            console.log(`ORDER_CREATED exists for order ${eventData.orderId}, proceeding with approval.`);
+
+            if (eventData.eventType === 'payment_events' && (eventData.data.paymentStatus === 'PAYMENT_AUTHORIZED' || eventData.data.paymentStatus === 'AUTHORIZATION_REVIEW_ACCEPTED')) {
+                const insertOrUpdateApproved = `INSERT INTO approved_orders (order_id, data) VALUES (?, ?)
+                                                ON DUPLICATE KEY UPDATE data = VALUES(data)`;
+
+                db.query(insertOrUpdateApproved, [eventData.orderId, JSON.stringify(eventData.data)], (err) => {
+                    if (err) {
+                        console.error('Error updating approved orders:', err);
+                    } else {
+                        console.log(`Order ${eventData.orderId} updated in approved_orders.`);
+                    }
+                });
+            } else {
+                console.log(`Payment status is not authorized or under review for order ${eventData.orderId}. No update performed.`);
             }
+        } else {
+            console.log(`No ORDER_CREATED event found for order ${eventData.orderId}. Skipping update.`);
         }
     });
 }
 
-// Function to process messages
-const processMessage = async ({ topic, message }: EachMessagePayload): Promise<void> => {
-    if (!message.value) {
-        console.log(`Received message with null value in topic ${topic}`);
-        return; // Exit if message value is null
+// Process messages from Kafka
+const processMessage = async ({ topic, partition, message }: EachMessagePayload) => {
+    const { key, value, timestamp } = message;
+
+    if (value === null) {
+        console.error(`Received null message on topic ${topic}`);
+        return; // Skip processing for null message value
     }
 
-    console.log(`Received message from ${topic}: ${message.value.toString()}`);
-    const eventData = JSON.parse(message.value.toString());
-    const orderId = eventData.orderId;
+    const data = JSON.parse(value.toString());
+    const eventData = {
+        orderId: data.orderId,
+        eventType: topic,
+        data: data,
+        revision: data.revision  // Assume revision is part of the event data
+    };
 
-    let query = '';
-    if (topic === 'order_events') {
-        const { orderStatus } = eventData;
-        query = `INSERT INTO orders (order_id, order_status) VALUES ('${orderId}', '${orderStatus}')
-                 ON DUPLICATE KEY UPDATE order_status='${orderStatus}';`;
-    } else if (topic === 'payment_events') {
-        const { paymentStatus, reviewStatus } = eventData;  
-        query = `UPDATE orders SET payment_status='${paymentStatus}', review_status='${reviewStatus}'
-                 WHERE order_id='${orderId}';`;
-    }
-
-    db.query(query, (err) => {
-        if (err) throw err;
-        console.log(`Database updated for order ${orderId}`);
-        // Check and send the order if it meets the criteria
-        sendOrder(orderId);
-    });
+    await logEvent(eventData);
+    await updateApprovedOrders(eventData);
 };
 
-// Running the consumers
+// Run the consumer
 const run = async (): Promise<void> => {
-    await kconsumer.connect();
-    await kconsumer.subscribe({ topic: 'order_events' });
-    await kconsumer.subscribe({ topic: 'payment_events' });
+    await consumer.connect();
+    await consumer.subscribe({ topic: 'order_events' });
+    await consumer.subscribe({ topic: 'payment_events' });
 
-    await kconsumer.run({
-        eachMessage: processMessage,
+    await consumer.run({
+        eachMessage: processMessage
     });
-
-    
 };
 
 run().catch(console.error);
