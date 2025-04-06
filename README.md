@@ -198,4 +198,16 @@ npm install
 }
 ```
 
+##### 9. Check the database 
 
+**event_journal table**
+
+![Alt text](images/event-journal.png)
+
+**approved_orders**
+
+![Alt text](images/approved_orders.png)
+
+**order_mgt_app console**
+
+![Alt text](images/order_mgt_app.png)
