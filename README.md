@@ -166,7 +166,7 @@ npm install
 {
     "eventType": "PAYMENT",
     "orderId": "order123",
-    "revision": 2, // one one of PAYMENT_AUHTORIZED and PAYMENT_AUTH_WITHPENDING_REVIEW occured for one payment.
+    "revision": 2, // only one of PAYMENT_AUHTORIZED and PAYMENT_AUTH_WITHPENDING_REVIEW occur for one payment.
     "paymentStatus" : "PAYMENT_AUTH_WITHPENDING_REVIEW",  
     "timestamp": "2025-04-05T02:26:32.265Z"
 }
@@ -192,7 +192,7 @@ npm install
 {
     "eventType": "PAYMENT",
     "orderId": "order123", 
-    "revision": 3, // one one of AUTHORIZATION_REVIEW_ACCEPTED and AUTHORIZATION_REVIEW_DECLINED occured for one payment.
+    "revision": 3, // only one of AUTHORIZATION_REVIEW_ACCEPTED and AUTHORIZATION_REVIEW_DECLINED occur for one payment.
     "paymentStatus" : "AUTHORIZATION_REVIEW_DECLINED",  
     "timestamp": "2025-04-05T02:26:30.265Z"
 }
