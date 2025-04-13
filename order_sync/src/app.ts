@@ -1,5 +1,6 @@
 import { Kafka, EachMessagePayload } from 'kafkajs';
 import mysql, { Connection } from 'mysql';
+import { EventEmitter } from 'events';
 
 interface EventData {
     orderId: string;
@@ -36,6 +37,8 @@ const kafka = new Kafka({
 });
 
 const consumer = kafka.consumer({ groupId: 'event-group' });
+// Create an EventEmitter instance for decoupling the 
+const eventProcessor = new EventEmitter();
 
 // Log event to the event_journal
 const logEvent = async (eventData: EventData) => {
@@ -89,6 +92,15 @@ async function updateApprovedOrders(eventData: EventData) {
     });
 }
 
+// Register an event listener that triggers updateApprovedOrders asynchronously
+eventProcessor.on('eventAdded', (eventData: EventData) => {
+    setImmediate(() => {
+        updateApprovedOrders(eventData).catch(error =>
+            console.error("Error in updateApprovedOrders:", error)
+        );
+    });
+});
+
 // Process messages from Kafka
 const processMessage = async ({ topic, partition, message }: EachMessagePayload) => {
     const { key, value, timestamp } = message;
@@ -107,7 +119,7 @@ const processMessage = async ({ topic, partition, message }: EachMessagePayload)
     };
 
     await logEvent(eventData);
-    await updateApprovedOrders(eventData);
+    eventProcessor.emit('eventAdded', eventData);
 };
 
 // Run the consumer
